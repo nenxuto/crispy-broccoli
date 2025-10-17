@@ -15,6 +15,7 @@ import (
 )
 
 func main() {
+	printBroccoli()
 	p := tea.NewProgram(model{})
 
 	m, err := p.Run()
@@ -22,13 +23,12 @@ func main() {
 		fmt.Println("Oh no:", err)
 		os.Exit(1)
 	}
-
 	if m, ok := m.(model); ok && m.choice != "" {
-		fmt.Printf("\n---\nYou chose %s!\n", m.choice)
+		tea.Quit()
 	}
 }
 
-var choices = []string{"Taro", "Coffee", "Lychee"}
+var choices = []string{"Enter Text", "Goof off", "Act a Fool"}
 
 type model struct {
 	cursor int
@@ -41,20 +41,28 @@ type textInputModel struct {
 }
 
 func (m model) Init() tea.Cmd {
-	return nil
+	return tea.SetWindowTitle("Crispy Broccoli")
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c", "q", "esc":
+		case "ctrl+c", "esc":
 			return m, tea.Quit
 
 		case "enter":
 			m.choice = choices[m.cursor]
-			if m.choice == "Taro" {
+			if m.choice == "Enter Text" {
 				Taro()
+			}
+			if m.choice == "Goof off" {
+				fmt.Println("\nYou chose to goof off!")
+				time.Sleep(2.0 * time.Second)
+			}
+			if m.choice == "Act a Fool" {
+				fmt.Println("\nYou chose to act a fool!")
+				time.Sleep(2.0 * time.Second)
 			}
 			return m, tea.Quit
 
@@ -77,7 +85,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	s := strings.Builder{}
-	s.WriteString("What kind of Bubble Tea would you like to order?\n\n")
+	s.WriteString("\nWhat would you like to do?\n\n")
 
 	for i := 0; i < len(choices); i++ {
 		if m.cursor == i {
@@ -88,8 +96,8 @@ func (m model) View() string {
 		s.WriteString(choices[i])
 		s.WriteString("\n")
 	}
-	s.WriteString("\n(press q to quit)\n")
-
+	s.WriteString("\npress esc to quit\n")
+	s.WriteString("\nArrow keys to navigate. Enter to select.\n")
 	return s.String()
 }
 
@@ -102,7 +110,7 @@ func Taro() {
 
 func taroModel() textInputModel {
 	ti := textinput.New()
-	ti.Placeholder = "Pikachu"
+	ti.Placeholder = "Enter some text"
 	ti.Focus()
 	ti.CharLimit = 156
 	ti.Width = 20
@@ -125,7 +133,7 @@ func (m textInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c", "q", "esc":
+		case "ctrl+c", "esc":
 			return m, tea.Quit
 		case "enter":
 			fmt.Println("\nYou entered:", m.textInput.Value())
@@ -146,6 +154,30 @@ func (m textInputModel) View() string {
 	return fmt.Sprintf(
 		"\nEnter some important text\n\n%s\n\n%s",
 		m.textInput.View(),
-		"(press q to quit)",
+		"press esc to quit",
 	) + "\n"
+}
+
+func printBroccoli() {
+	fmt.Println("		 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣤⣤⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀")
+	fmt.Println("		⠀⠀⠀⠀⢀⣤⣤⣤⣤⣄⣀⣾⣿⣿⣿⣿⣿⣿⣷⣀⣠⣤⣤⣤⣤⡀⠀⠀⠀⠀")
+	fmt.Println("		⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⡿⠿⠿⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀")
+	fmt.Println("		⠀⠀⠀⠀⠹⣿⣿⣿⣿⣿⣿⣿⣿⣶⣶⣄⠘⠋⣉⣀⣈⠙⢿⣿⣿⣁⡀⠀⠀⠀")
+	fmt.Println("		⠀⠀⣠⣶⣿⣿⡿⣿⣿⡿⠿⠿⣿⣿⣿⣿⣷⣾⣿⣿⣿⣷⣀⣿⣿⣿⣿⣦⡀⠀")
+	fmt.Println("		⠀⣼⣿⣿⣟⣁⣤⣤⣈⣴⣶⣦⡈⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡷⠀")
+	fmt.Println("		⠀⠈⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⠁⠀")
+	fmt.Println("		⠀⠀⠀⠈⠉⠛⢻⣿⣿⣿⣿⣿⣿⠋⠀⠙⣿⣿⣿⣿⣿⡟⠛⠛⠛⠋⠁⠀⠀⠀")
+	fmt.Println("		⠀⠀⠀⠀⠀⠀⠈⠛⠿⠿⠿⠋⠁⣴⣿⡆⠈⠙⠛⠛⠋⡀⠀⠀⠀⠀⠀⠀⠀⠀")
+	fmt.Println("		⠀⠀⠀⠀⠀⠀⠀⠀⠰⣶⣶⡀⠀⢸⣿⡇⠀⠀⢰⣾⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀")
+	fmt.Println("		⠀⠀⠀⠀⠀⠀⠀⠀⠀⢹⣿⣧⠀⢸⣿⡇⠀⢀⣿⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀")
+	fmt.Println("		⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⣿⡆⢸⣿⣿⠀⣼⡿⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀")
+	fmt.Println("		⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢿⣿⣿⣿⣿⣿⣿⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀")
+	fmt.Println("		⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⣿⣿⣿⣿⣿⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀")
+	fmt.Println("		⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠙⠛⠋⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀")
+	fmt.Println("  ____      _                   ____                          _ _ ")
+	fmt.Println(" / ___|_ __(_)___ _ __  _   _  | __ ) _ __ ___   ___ ___ ___ | (_)")
+	fmt.Println("| |   | '__| / __| '_ \\| | | | |  _ \\| '__/ _ \\ / __/ __/ _ \\| | |")
+	fmt.Println("| |___| |  | \\__ \\ |_) | |_| | | |_) | | | (_) | (_| (_| (_) | | |")
+	fmt.Println(" \\____|_|  |_|___/ .__/ \\__, | |____/|_|  \\___/ \\___\\___\\___/|_|_|")
+	fmt.Println("                 |_|    |___/                                     ")
 }

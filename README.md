@@ -1,24 +1,32 @@
 # crispy-broccoli
 
-A small single-binary Go CLI program that demonstrates a simple terminal UI using Bubble Tea and Bubbles.
+A playful single-binary Go CLI program demonstrating a tiny Bubble Tea TUI.
 
-What the program does
+Overview
 
-- On start it shows a small menu asking "What kind of Bubble Tea would you like to order?" with three choices:
-  - Taro
-  - Coffee
-  - Lychee
+- On start the program prints a small broccoli ASCII-art banner.
+- It then displays a menu with three choices:
+  - Enter Text
+  - Goof off
+  - Act a Fool
 
-- You navigate with the arrow keys (or `j`/`k`) and press Enter to select.
+Controls
 
-- If you choose `Taro`, the program opens a second input UI that asks:
-  "What’s your favorite Pokémon?"
+- Navigate with the arrow keys or `j`/`k`.
+- Press Enter to select an option.
+- Press Esc or Ctrl+C to quit.
 
-  You can type a short answer (text input) then press Enter or Esc to quit that input UI and return. The program then exits and prints your original menu choice.
+Behavior
 
-Usage (module-aware, recommended)
+- Enter Text: opens a text-input UI (Bubbles textinput) prompting you to "Enter some important text". After pressing Enter the program prints the entered text and briefly pauses.
+- Goof off: prints "You chose to goof off!" and sleeps for 2 seconds, then exits.
+- Act a Fool: prints "You chose to act a fool!" and sleeps for 2 seconds, then exits.
 
-1. Ensure dependencies are present (downloads modules):
+Usage
+
+Module-aware (recommended):
+
+1. Download dependencies:
 
 	go mod tidy
 
@@ -36,17 +44,13 @@ Example session
 
 	go run Main/main.go
 
-2. Use the arrow keys to select "Taro" and press Enter.
-3. Type a Pokémon name (e.g. Pikachu) and press Enter.
-4. After the UI exits the program prints the final menu selection, for example:
-
-	---
-	You chose Taro!
+2. Choose "Enter Text", type some text (e.g. "Hello world") and press Enter.
+3. The program will print the text you entered and then exit.
 
 Notes for contributors
 
-- Source: `Main/main.go` (menu & UI flow) and `Main/taro.go` (example text input — excluded from normal builds by the `example` build tag).
+- Source: `Main/main.go` (menu, text-input flow) and `Main/taro.go` (a secondary example file; excluded from normal builds with the `example` build tag).
 - Module path: `github.com/nenxuto/crispy-broccoli` (see `go.mod`).
-- To run examples that are excluded by build tags use `-tags=example` with `go run` or `go build`.
+- To run files excluded by build tags use `-tags=example` with `go run` or `go build`.
 
-If you'd like I can add a small GitHub Actions workflow to run `go build` on push/PRs or expand the README with a CONTRIBUTING section.
+If you want, I can add a small GitHub Actions workflow to automatically run `go build` on pushes/PRs, or expand this README with a CONTRIBUTING guide.
