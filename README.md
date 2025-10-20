@@ -1,56 +1,71 @@
 # crispy-broccoli
+# crispy-broccoli
 
-A playful single-binary Go CLI program demonstrating a tiny Bubble Tea TUI.
+A focused command-line helper that scans a selected file for a specific binary pattern and extracts embedded strings from PE (Portable Executable) files.
 
-Overview
+At startup the program prints a decorative ASCII "broccoli" header and presents a minimal interactive menu (single item: "Pick a File"). Use the file picker to select a binary, and the program will search its bytes for a particular instruction pattern, compute the referenced string address, and print any extracted strings.
 
-- On start the program prints a small broccoli ASCII-art banner.
-- It then displays a menu with three choices:
-  - Enter Text
-  - Goof off
-  - Act a Fool
+What it does
 
-Controls
+- Prints an ASCII-art header on start.
+- Presents a single-menu UI: "Pick a File".
+- When you pick a file the program:
+  - Reads the file bytes.
+  - Scans for a specific 17-byte instruction pattern (the program looks for opcodes matching a heuristic pattern used to locate embedded strings).
+  - For each match it converts the file offset to an RVA/VA using the PE sections and the ImageBase, reads a displacement and length from nearby bytes, and extracts the target string bytes.
+  - Prints any found strings to stdout. If none are found it prints "No Broccoli detected.".
 
-- Navigate with the arrow keys or `j`/`k`.
-- Press Enter to select an option.
-- Press Esc or Ctrl+C to quit.
+Keybindings and navigation
 
-Behavior
+- Arrow keys or `j`/`k` to move (menu has one item).
+- Enter to select the highlighted menu entry.
+- Esc or Ctrl+C to quit.
 
-- Enter Text: opens a text-input UI (Bubbles textinput) prompting you to "Enter some important text". After pressing Enter the program prints the entered text and briefly pauses.
-- Goof off: prints "You chose to goof off!" and sleeps for 2 seconds, then exits.
-- Act a Fool: prints "You chose to act a fool!" and sleeps for 2 seconds, then exits.
+Typical output
+
+- If matches are found the program will print lines like:
+
+  String: <extracted-bytes-as-text>
+
+- If no matches are found you'll see:
+
+  No Broccoli detected.
 
 Usage
 
-Module-aware (recommended):
+1. Ensure you have Go installed (the repo uses Go modules).
 
-1. Download dependencies:
+2. Download dependencies and tidy the module:
 
-	go mod tidy
+  go mod tidy
 
-2. Run the program:
+3. Run the program:
 
-	go run Main/main.go
+  go run Main/main.go
 
-3. Build a binary:
+4. Build a binary:
 
-	go build -o bin/crispy-broccoli Main/main.go
+  go build -o bin/crispy-broccoli Main/main.go
 
-Example session
+Module
 
-1. Start the program:
-
-	go run Main/main.go
-
-2. Choose "Enter Text", type some text (e.g. "Hello world") and press Enter.
-3. The program will print the text you entered and then exit.
+This repository uses Go modules. Module path (see `go.mod`): `github.com/nenxuto/crispy-broccoli`.
 
 Notes for contributors
 
-- Source: `Main/main.go` (menu, text-input flow) and `Main/taro.go` (a secondary example file; excluded from normal builds with the `example` build tag).
-- Module path: `github.com/nenxuto/crispy-broccoli` (see `go.mod`).
-- To run files excluded by build tags use `-tags=example` with `go run` or `go build`.
+- Main logic is implemented in `Main/main.go`.
+- The program uses the Bubbles filepicker component to let the user choose a file interactively.
+- The PE parsing uses `debug/pe` to map file offsets to RVAs/virtual addresses; the code handles 64-bit Optional Header (`OptionalHeader64`).
+- The byte-pattern search is a heuristic for locating instructions that reference embedded strings; review and adjust the pattern if you need to target different compilers/optimizations.
 
-If you want, I can add a small GitHub Actions workflow to automatically run `go build` on pushes/PRs, or expand this README with a CONTRIBUTING guide.
+Safety & privacy
+
+- The program only reads local files selected by the user and prints extracted strings — it does not transmit data over the network.
+
+Next steps (optional)
+
+- Add a command-line mode to process files non-interactively (e.g., `crispy-broccoli scan <path>`).
+- Add unit tests for the parsing helpers (`fileOffsetToRVA`, `vaToFileOffset`, `readDisplacement`).
+- Add a small CI workflow to run `go build` on pushes/PRs.
+
+If you want any of the next steps implemented, tell me which and I will add them.
