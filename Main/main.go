@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"debug/pe"
 	"encoding/binary"
 	"errors"
@@ -148,18 +149,22 @@ func (m filePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if didSelect, path := m.filepicker.DidSelectFile(msg); didSelect {
 		m.selectedFile = path
-		outputFile, err := os.Create("Strings_Output.txt")
-		if err != nil {
-			fmt.Println("Error creating output file:", err)
-			return m, nil
-		}
-		defer outputFile.Close()
 		fileData, err := fileReader(m.selectedFile)
 		if err != nil {
 			m.err = err
 			m.selectedFile = ""
 			return m, tea.Batch(cmd, clearErrorAfter(2*time.Second))
 		}
+		if !bytes.Contains(fileData, []byte("Go build ID:")) {
+			fmt.Print("No Go build ID found. Is this a Go binary?")
+			return m, nil
+		}
+		outputFile, err := os.Create("Strings_Output.txt")
+		if err != nil {
+			fmt.Println("Error creating output file:", err)
+			return m, nil
+		}
+		defer outputFile.Close()
 		const patternLength = 17
 		var matches []int
 		i := 0
@@ -221,6 +226,7 @@ func (m filePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					continue
 				}
 				fmt.Fprintf(outputFile, "Offset 0x%X: %s\n", off, string(stringBytes))
+				fmt.Print("Strings extracted successfully to Strings_Output.txt!")
 			}
 		}
 	}
