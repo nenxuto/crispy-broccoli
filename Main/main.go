@@ -146,15 +146,16 @@ func (m filePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.filepicker, cmd = m.filepicker.Update(msg)
 
-	// Did the user select a file?
 	if didSelect, path := m.filepicker.DidSelectFile(msg); didSelect {
-		// Get the path of the selected file.
 		m.selectedFile = path
-
-		// Read the file.
+		outputFile, err := os.Create("Strings_Output.txt")
+		if err != nil {
+			fmt.Println("Error creating output file:", err)
+			return m, nil
+		}
+		defer outputFile.Close()
 		fileData, err := fileReader(m.selectedFile)
 		if err != nil {
-			// Show read error in the view for a short time.
 			m.err = err
 			m.selectedFile = ""
 			return m, tea.Batch(cmd, clearErrorAfter(2*time.Second))
@@ -209,28 +210,22 @@ func (m filePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					fmt.Println("❌ Error converting VA to file offset:", err)
 				}
 				if off+12 > len(fileData) {
-					fmt.Printf("❌ Offset 0x%X: string length out of bounds\n", off)
 					continue
 				}
 				length := binary.LittleEndian.Uint32(fileData[off+8 : off+12])
 				if int(stringOffset)+int(length) > len(fileData) {
-					fmt.Printf("❌ Offset 0x%X: string offset out of bounds (offset=0x%X, len=%d)\n", off, stringOffset, length)
 					continue
 				}
 				stringBytes := fileData[stringOffset : stringOffset+length]
-				if len(stringBytes) == 0 {
-					fmt.Printf("❌ Offset 0x%X: extracted empty string\n", off)
+				if len(stringBytes) == 0 || string(stringBytes) == "" {
 					continue
 				}
-				fmt.Printf("String: %s\n", string(stringBytes))
+				fmt.Fprintf(outputFile, "Offset 0x%X: %s\n", off, string(stringBytes))
 			}
 		}
 	}
 
-	// Did the user select a disabled file?
-	// This is only necessary to display an error to the user.
 	if didSelect, path := m.filepicker.DidSelectDisabledFile(msg); didSelect {
-		// Let's clear the selectedFile and display an error.
 		m.err = errors.New(path + " is not valid.")
 		m.selectedFile = ""
 		return m, tea.Batch(cmd, clearErrorAfter(2*time.Second))
