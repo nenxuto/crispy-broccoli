@@ -222,12 +222,29 @@ func (m filePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					continue
 				}
 				stringBytes := fileData[stringOffset : stringOffset+length]
-				if len(stringBytes) == 0 || string(stringBytes) == "" {
+				if len(stringBytes) == 0 ||
+					string(stringBytes) == "" ||
+					string(stringBytes) == "\n" {
 					continue
 				}
-				fmt.Fprintf(outputFile, "Offset 0x%X: %s\n", off, string(stringBytes))
-				fmt.Print("Strings extracted successfully to Strings_Output.txt!")
+				if strings.Contains(string(stringBytes), "\x0A") {
+					stringBytes = bytes.ReplaceAll(stringBytes, []byte{0x0A}, []byte{' '})
+				}
+				valid := true
+				for _, b := range stringBytes {
+					if b < 32 || b > 126 {
+						valid = false
+						break
+					}
+				}
+				if !valid {
+					continue
+				}
+				fmt.Fprintf(outputFile, "VA 0x%X: %s\n", virtualAddress, string(stringBytes))
 			}
+			fmt.Print("Strings extracted successfully to Strings_Output.txt!")
+			time.Sleep(5 * time.Second)
+			os.Exit(0)
 		}
 	}
 
