@@ -1,6 +1,6 @@
 # 🥦Crispy Broccoli🥦
 
-A command line tool built with Bubbletea that scans a selected file and extracts embedded strings from Golang PE files.
+A command line tool built with [Bubbletea](https://github.com/charmbracelet/bubbletea/tree/main) that scans a selected file and extracts embedded strings from Golang PE files.
 
 What it does
 
