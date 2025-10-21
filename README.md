@@ -27,6 +27,7 @@ Usage
   go build -o bin/crispy-broccoli Main/main.go
 
 Module
+
 This repository uses Go modules. Module path (see `go.mod`): `github.com/nenxuto/crispy-broccoli`.
 
 Notes for contributors
