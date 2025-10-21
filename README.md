@@ -1,4 +1,4 @@
-# Crispy Broccoli
+# 🥦Crispy Broccoli🥦
 
 A command line tool built with Bubbletea that scans a selected file and extracts embedded strings from Golang PE files.
 
