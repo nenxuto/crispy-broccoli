@@ -2,12 +2,16 @@ package main
 
 import (
 	"bytes"
+	"debug/macho"
 	"debug/pe"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -15,39 +19,188 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+/* =========================
+   Binary Abstraction
+========================= */
+
+type Binary interface {
+	ImageBase() uint64
+	Sections() []BinarySection
+	Close() error
+}
+
+type BinarySection struct {
+	Name   string
+	Addr   uint64
+	Size   uint64
+	Offset uint64
+}
+
+/* =========================
+   PE Implementation
+========================= */
+
+type PEBinary struct {
+	f  *pe.File
+	os *os.File
+}
+
+func openPE(path string) (*PEBinary, error) {
+	fh, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	pf, err := pe.NewFile(fh)
+	if err != nil {
+		fh.Close()
+		return nil, err
+	}
+	return &PEBinary{f: pf, os: fh}, nil
+}
+
+func (p *PEBinary) ImageBase() uint64 {
+	if opt, ok := p.f.OptionalHeader.(*pe.OptionalHeader64); ok {
+		return opt.ImageBase
+	}
+	return 0
+}
+
+func (p *PEBinary) Sections() []BinarySection {
+	var out []BinarySection
+	for _, s := range p.f.Sections {
+		out = append(out, BinarySection{
+			Name:   s.Name,
+			Addr:   uint64(s.VirtualAddress),
+			Size:   uint64(s.VirtualSize),
+			Offset: uint64(s.Offset),
+		})
+	}
+	return out
+}
+
+func (p *PEBinary) Close() error {
+	p.f.Close()
+	return p.os.Close()
+}
+
+/* =========================
+   Mach-O Implementation
+========================= */
+
+type MachOBinary struct {
+	f *macho.File
+}
+
+func openMachO(path string) (*MachOBinary, error) {
+	f, err := macho.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	return &MachOBinary{f: f}, nil
+}
+
+func (m *MachOBinary) ImageBase() uint64 {
+	return 0
+}
+
+func (m *MachOBinary) Sections() []BinarySection {
+	var out []BinarySection
+	for _, s := range m.f.Sections {
+		out = append(out, BinarySection{
+			Name:   s.Name,
+			Addr:   s.Addr,
+			Size:   s.Size,
+			Offset: uint64(s.Offset),
+		})
+	}
+	return out
+}
+
+func (m *MachOBinary) Close() error {
+	return m.f.Close()
+}
+
+/* =========================
+   Binary Detection
+========================= */
+
+func detectBinary(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	var magic [4]byte
+	if _, err := io.ReadFull(f, magic[:]); err != nil {
+		return "", err
+	}
+
+	// PE
+	if magic[0] == 'M' && magic[1] == 'Z' {
+		return "pe", nil
+	}
+
+	be := binary.BigEndian.Uint32(magic[:])
+	le := binary.LittleEndian.Uint32(magic[:])
+
+	switch {
+	// Mach-O 32
+	case be == 0xfeedface || le == 0xfeedface:
+		return "macho", nil
+	// Mach-O 64
+	case be == 0xfeedfacf || le == 0xfeedfacf:
+		return "macho", nil
+	// Fat Mach-O
+	case be == 0xcafebabe || le == 0xcafebabe:
+		return "macho", nil
+	}
+
+	return "", errors.New("unknown binary format")
+}
+
+/* =========================
+   Cross-Platform Output Path
+========================= */
+
+func outputFilePath(filename string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	switch runtime.GOOS {
+	case "windows", "darwin":
+		return filepath.Join(home, "Desktop", filename), nil
+
+	case "linux":
+		desktop := filepath.Join(home, "Desktop")
+		if info, err := os.Stat(desktop); err == nil && info.IsDir() {
+			return filepath.Join(desktop, filename), nil
+		}
+		return filename, nil
+
+	default:
+		return filename, nil
+	}
+}
+
+/* =========================
+   UI
+========================= */
+
+type model struct{}
+
+type filePickerModel struct {
+	filepicker filepicker.Model
+}
+
 func main() {
 	printBroccoli()
 	p := tea.NewProgram(model{})
-
-	m, err := p.Run()
-	if err != nil {
-		fmt.Println("Oh no:", err)
-		os.Exit(1)
+	if _, err := p.Run(); err != nil {
+		log.Fatal(err)
 	}
-	if m, ok := m.(model); ok && m.choice != "" {
-		os.Exit(0)
-	}
-}
-
-var choices = []string{"Pick a File"}
-
-type model struct {
-	cursor int
-	choice string
-}
-
-type filePickerModel struct {
-	filepicker   filepicker.Model
-	selectedFile string
-	quitting     bool
-	err          error
-}
-
-type Section struct {
-	Name             string
-	VirtualAddress   uint32
-	SizeOfRawData    uint32
-	PointerToRawData uint32
 }
 
 func (m model) Init() tea.Cmd {
@@ -55,77 +208,21 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "esc":
-			return m, tea.Quit
-
+	if k, ok := msg.(tea.KeyMsg); ok {
+		switch k.String() {
 		case "enter":
-			m.choice = choices[m.cursor]
-			if m.choice == "Pick a File" {
-				Coffee()
-			}
+			p := tea.NewProgram(filePickerModel{filepicker: filepicker.New()})
+			p.Run()
 			return m, tea.Quit
-
-		case "down", "j":
-			m.cursor++
-			if m.cursor >= len(choices) {
-				m.cursor = 0
-			}
-
-		case "up", "k":
-			m.cursor--
-			if m.cursor < 0 {
-				m.cursor = len(choices) - 1
-			}
+		case "esc", "ctrl+c":
+			return m, tea.Quit
 		}
 	}
-
 	return m, nil
 }
 
 func (m model) View() string {
-	s := strings.Builder{}
-	s.WriteString("\nWelcome to Crispy Broccoli - Go String Parser\n\n")
-
-	for i := 0; i < len(choices); i++ {
-		if m.cursor == i {
-			s.WriteString("(•) ")
-		} else {
-			s.WriteString("( ) ")
-		}
-		s.WriteString(choices[i])
-		s.WriteString("\n")
-	}
-	s.WriteString("\nPress esc to quit\n")
-	s.WriteString("\nEnter to Continue\n")
-	return s.String()
-}
-
-func coffeeModel() filePickerModel {
-	fp := filepicker.New()
-	return filePickerModel{
-		filepicker:   fp,
-		selectedFile: "",
-		quitting:     false,
-		err:          nil,
-	}
-}
-
-func Coffee() {
-	p := tea.NewProgram(coffeeModel())
-	if _, err := p.Run(); err != nil {
-		log.Fatal(err)
-	}
-}
-
-type clearErrorMsg struct{}
-
-func clearErrorAfter(t time.Duration) tea.Cmd {
-	return tea.Tick(t, func(_ time.Time) tea.Msg {
-		return clearErrorMsg{}
-	})
+	return "\nWelcome to Crispy Broccoli\n\n(•) Pick a File\n\nPress Enter\n"
 }
 
 func (m filePickerModel) Init() tea.Cmd {
@@ -133,188 +230,131 @@ func (m filePickerModel) Init() tea.Cmd {
 }
 
 func (m filePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
-			m.quitting = true
-			return m, tea.Quit
-		}
-	case clearErrorMsg:
-		m.err = nil
-	}
-
 	var cmd tea.Cmd
 	m.filepicker, cmd = m.filepicker.Update(msg)
 
 	if didSelect, path := m.filepicker.DidSelectFile(msg); didSelect {
-		m.selectedFile = path
-		fileData, err := fileReader(m.selectedFile)
-		if err != nil {
-			m.err = err
-			m.selectedFile = ""
-			return m, tea.Batch(cmd, clearErrorAfter(2*time.Second))
-		}
-		if !bytes.Contains(fileData, []byte("Go build ID:")) {
-			fmt.Print("No Go build ID found. Is this a Go binary?")
-			return m, nil
-		}
-		outputFile, err := os.Create("Strings_Output.txt")
-		if err != nil {
-			fmt.Println("Error creating output file:", err)
-			return m, nil
-		}
-		defer outputFile.Close()
-		const patternLength = 17
-		var matches []int
-		i := 0
-		for i <= len(fileData)-patternLength {
-			if fileData[i] == 0x48 &&
-				fileData[i+1] == 0x8D &&
-				(fileData[i+2] == 0x0D || fileData[i+2] == 0x05) &&
-				(fileData[i+7] == 0xBF || fileData[i+7] == 0xBB) &&
-				fileData[i+12] == 0xE8 {
-				matches = append(matches, i)
-				i += patternLength
-			} else {
-				i++
-			}
-		}
-		if len(matches) == 0 {
-			fmt.Print("No Broccoli detected.")
-		} else {
-			f, err := os.Open(m.selectedFile)
-			if err != nil {
-				panic(err)
-			}
-			peFile, err := pe.NewFile(f)
-			if err != nil {
-				panic(err)
-			}
-			var imageBase uint64
-			if optHdr, ok := peFile.OptionalHeader.(*pe.OptionalHeader64); ok {
-				imageBase = optHdr.ImageBase
-			} else {
-				panic("PE is not 64-bit or missing optional header")
-			}
-			for _, off := range matches {
-				rva, err := fileOffsetToRVA(uint32(off), peFile.Sections)
-				if err != nil {
-					fmt.Printf("❌ Offset 0x%X: %v\n", off, err)
-					continue
-				}
-				virtualAddress := imageBase + uint64(rva)
-				disp, err := readDisplacement(fileData, off)
-				if err != nil {
-					fmt.Println("❌ Error reading displacement:", err)
-				}
-				ripAfter := virtualAddress + 7
-				stringVA := ripAfter + uint64(disp)
-				stringOffset, err := vaToFileOffset(stringVA, imageBase, peFile.Sections)
-				if err != nil {
-					fmt.Println("❌ Error converting VA to file offset:", err)
-				}
-				if off+12 > len(fileData) {
-					continue
-				}
-				length := binary.LittleEndian.Uint32(fileData[off+8 : off+12])
-				if int(stringOffset)+int(length) > len(fileData) {
-					continue
-				}
-				stringBytes := fileData[stringOffset : stringOffset+length]
-				if len(stringBytes) == 0 ||
-					string(stringBytes) == "" ||
-					string(stringBytes) == "\n" {
-					continue
-				}
-				if strings.Contains(string(stringBytes), "\x0A") {
-					stringBytes = bytes.ReplaceAll(stringBytes, []byte{0x0A}, []byte{' '})
-				}
-				valid := true
-				for _, b := range stringBytes {
-					if b < 32 || b > 126 {
-						valid = false
-						break
-					}
-				}
-				if !valid {
-					continue
-				}
-				fmt.Fprintf(outputFile, "VA 0x%X: %s\n", virtualAddress, string(stringBytes))
-			}
-			fmt.Print("Strings extracted successfully to Strings_Output.txt!")
-			time.Sleep(5 * time.Second)
-			os.Exit(0)
-		}
+		processFile(path)
+		time.Sleep(3 * time.Second)
+		return m, tea.Quit
 	}
-
-	if didSelect, path := m.filepicker.DidSelectDisabledFile(msg); didSelect {
-		m.err = errors.New(path + " is not valid.")
-		m.selectedFile = ""
-		return m, tea.Batch(cmd, clearErrorAfter(2*time.Second))
-	}
-
 	return m, cmd
 }
 
 func (m filePickerModel) View() string {
-	if m.quitting {
-		return ""
-	}
-	var s strings.Builder
-	s.WriteString("\n  ")
-	if m.err != nil {
-		s.WriteString(m.filepicker.Styles.DisabledFile.Render(m.err.Error()))
-	} else if m.selectedFile == "" {
-		s.WriteString("Pick a file:")
-	} else {
-		s.WriteString("Selected file: " + m.filepicker.Styles.Selected.Render(m.selectedFile))
-	}
-	s.WriteString("\n\n" + m.filepicker.View() + "\n")
-	return s.String()
+	return "\nPick a file:\n\n" + m.filepicker.View()
 }
 
-func fileReader(path string) ([]byte, error) {
-	filePath := path
-	data, err := os.ReadFile(filePath)
+/* =========================
+   Core Logic
+========================= */
+
+func processFile(path string) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Printf("Error reading file: %v\n", err)
-		return nil, err
+		fmt.Println(err)
+		return
 	}
-	return data, nil
-}
 
-func fileOffsetToRVA(fileOffset uint32, sections []*pe.Section) (uint32, error) {
-	for _, s := range sections {
-		start := s.Offset
-		end := s.Offset + s.Size
-		if fileOffset >= start && fileOffset < end {
-			return s.VirtualAddress + (fileOffset - start), nil
+	if !bytes.Contains(data, []byte("Go build ID:")) {
+		fmt.Println("Not a Go binary")
+		return
+	}
+
+	kind, err := detectBinary(path)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	var bin Binary
+	if kind == "pe" {
+		bin, err = openPE(path)
+	} else {
+		bin, err = openMachO(path)
+	}
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer bin.Close()
+
+	outPath, err := outputFilePath("Strings_Output.txt")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	out, err := os.Create(outPath)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer out.Close()
+
+	imageBase := bin.ImageBase()
+	sections := bin.Sections()
+
+	for i := 0; i+17 < len(data); i++ {
+		if data[i] == 0x48 && data[i+12] == 0xE8 {
+			va, err := fileOffsetToVA(uint64(i), imageBase, sections)
+			if err != nil {
+				continue
+			}
+
+			disp := int32(binary.LittleEndian.Uint32(data[i+3 : i+7]))
+			strVA := va + 7 + uint64(disp)
+
+			off, err := vaToFileOffset(strVA, imageBase, sections)
+			if err != nil {
+				continue
+			}
+
+			length := binary.LittleEndian.Uint32(data[i+8 : i+12])
+			if int(off+uint64(length)) > len(data) {
+				continue
+			}
+
+			s := data[off : off+uint64(length)]
+			if isPrintable(s) {
+				fmt.Fprintf(out, "VA 0x%X: %s\n", va, strings.ReplaceAll(string(s), "\n", " "))
+			}
 		}
 	}
-	return 0, errors.New("file offset not in any section")
+
+	fmt.Printf("Strings extracted successfully to:\n%s\n", outPath)
 }
 
-func readDisplacement(data []byte, offset int) (int32, error) {
-	if offset+7 > len(data) {
-		return 0, fmt.Errorf("offset %d out of bounds", offset)
-	}
-	dispBytes := data[offset+3 : offset+7]
-	disp := int32(binary.LittleEndian.Uint32(dispBytes))
-	return disp, nil
-}
+/* =========================
+   Helpers
+========================= */
 
-func vaToFileOffset(va uint64, imageBase uint64, sections []*pe.Section) (uint32, error) {
-	rva := uint32(va - imageBase)
-	for _, s := range sections {
-		vaStart := s.VirtualAddress
-		vaEnd := s.VirtualAddress + s.VirtualSize
-		if rva >= vaStart && rva < vaEnd {
-			offset := (rva - vaStart) + s.Offset
-			return offset, nil
+func fileOffsetToVA(off, base uint64, secs []BinarySection) (uint64, error) {
+	for _, s := range secs {
+		if off >= s.Offset && off < s.Offset+s.Size {
+			return base + s.Addr + (off - s.Offset), nil
 		}
 	}
-	return 0, fmt.Errorf("VA 0x%X not found in any section", va)
+	return 0, errors.New("offset not mapped")
+}
+
+func vaToFileOffset(va, base uint64, secs []BinarySection) (uint64, error) {
+	rva := va - base
+	for _, s := range secs {
+		if rva >= s.Addr && rva < s.Addr+s.Size {
+			return s.Offset + (rva - s.Addr), nil
+		}
+	}
+	return 0, errors.New("va not mapped")
+}
+
+func isPrintable(b []byte) bool {
+	for _, c := range b {
+		if c < 32 || c > 126 {
+			return false
+		}
+	}
+	return true
 }
 
 func printBroccoli() {
